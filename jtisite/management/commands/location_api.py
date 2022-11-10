@@ -78,7 +78,7 @@ def google_maps_geocoding(lat, lon):
     except Country.DoesNotExist:
         print(country_name)
         raise
-    
+
     city, created = City.objects.get_or_create(
         name=city_name,
         country=country,

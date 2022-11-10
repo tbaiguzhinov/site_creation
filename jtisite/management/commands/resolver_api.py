@@ -75,7 +75,7 @@ def create_new_site(token, request):
         '51551': 'start_date',
         '51620': 'legal address',
     }
-    required_fields = ['37052', '37083', '37093', '51620'] 
+    required_fields = ['37052', '37083', '37093', '51620']
     evaluations = []
     for fieldId, value_field in request['evaluations'].items():
         value = value_field['value']
@@ -260,7 +260,13 @@ def check_for_ref_id(token, blank_ref_id, country_simp_id):
     return suggested_refId
 
 
-def get_description(operated_by, site_type, site_category, address, coordinates):
+def get_description(
+    operated_by,
+    site_type,
+    site_category,
+    address,
+    coordinates
+):
     operated_options = {
         98799: 'JTI',
         98204: '3PL',
@@ -384,7 +390,7 @@ def get_related_objects(token, objectId, relationshipTypeId):
     )
     response.raise_for_status()
     return response.json()
-    
+
 
 def update_object(token, objectId, name=None, description=None):
     data = {}
@@ -400,7 +406,13 @@ def update_object(token, objectId, name=None, description=None):
     response.raise_for_status()
 
 
-def relate_objects(token, objectId, relatedObjectId, relationshipTypeId=18879, params=None):
+def relate_objects(
+    token,
+    objectId,
+    relatedObjectId,
+    relationshipTypeId=18879,
+    params=None
+):
     response = requests.post(
         f'https://eu.core.resolver.com/creation/creation/{objectId}/relationship/{relationshipTypeId}/relatedObject/{relatedObjectId}',
         headers={'Authorization': f'Bearer {token}'},

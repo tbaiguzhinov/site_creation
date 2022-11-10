@@ -27,17 +27,17 @@ def get_all_objects(token, objectTypeId):
 
 class Command(BaseCommand):
     
-    # def add_arguments(self, parser):
-    #     parser.add_argument('objectTypeId', type=int)
-    
+    def add_arguments(self, parser):
+        parser.add_argument('objectTypeId', type=int)
+
     def handle(self, *args, **options):
-        # load_dotenv()
-        # token = authenticate(
-        #     login=os.getenv('EMAIL'),
-        #     password=os.getenv('PASSWORD'),
-        # )
-        # objectTypeId = options['objectTypeId']
-        # objects = get_all_objects(token, objectTypeId)
+        load_dotenv()
+        token = authenticate(
+            login=os.getenv('EMAIL'),
+            password=os.getenv('PASSWORD'),
+        )
+        objectTypeId = options['objectTypeId']
+        objects = get_all_objects(token, objectTypeId)
         df = pd.read_excel(
             r'C:\Users\MOSBAIGUT\Downloads\reportExport_countries_and_cities__11092022_724PM.xlsx',
             sheet_name='Table-3',

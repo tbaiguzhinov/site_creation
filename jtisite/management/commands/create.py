@@ -21,9 +21,7 @@ site_create_request = 122005
 
 
 class Command(BaseCommand):
-    
     def handle(self, *args, **options):
-            
         load_dotenv()
         token = authenticate(
             login=os.getenv('EMAIL'),
@@ -36,18 +34,23 @@ class Command(BaseCommand):
             lifeCycleId=request_active,
         )
         for request in open_requests:
-            request_type = request['evaluations'][str(request_type_field)]['value'] if str(
+            request_type = request['evaluations'][
+                str(request_type_field)
+                ]['value'] if str(
                 request_type_field) in request['evaluations'] else None
-            if request['objectLifeCycleStateId'] == request_active and request_type == site_create_request:
+            if request['objectLifeCycleStateId'] == request_active \
+                    and request_type == site_create_request:
                 new_requests.append(request)
-        
+
         print('Processing {} new requests'.format(len(new_requests)))
         for request in new_requests:
             request_order = request['id']
             print(f'working on requset No {request_order}')
             print('...creating site')
-            site_id, site_name, description, country_id, trigger_id_for_csa = create_new_site(token, request)
-            update_object(token, objectId=site_id, name=site_name, description=description)
+            site_id, site_name, description, country_id, trigger_id_for_csa = create_new_site(
+                token, request)
+            update_object(token, objectId=site_id,
+                          name=site_name, description=description)
             print(f'{site_name} created')
             print('...creating assessment')
             assessment_id = create_assessment(token, site_name, site_id)
@@ -56,21 +59,21 @@ class Command(BaseCommand):
                 objectId=assessment_id,
                 relatedObjectId=304124,
                 relationshipTypeId=18885,
-                params={'shouldClone':'true'}
+                params={'shouldClone': 'true'}
             )
             relate_objects(
                 token=token,
                 objectId=assessment_id,
                 relatedObjectId=304125,
                 relationshipTypeId=18885,
-                params={'shouldClone':'true'}
+                params={'shouldClone': 'true'}
             )
             print('...confirming scope')
             trigger_workflow(token, objectId=assessment_id, triggerId=38600)
             print('...renaming presets')
             presets = get_related_objects(
                 token=token,
-                objectId=assessment_id, 
+                objectId=assessment_id,
                 relationshipTypeId=18885,
             )
             for preset in presets:
@@ -78,8 +81,10 @@ class Command(BaseCommand):
                     csa_preset_id = preset['objectId']
                 elif 'Security Risk Assessment' in preset['externalRefId']:
                     srm_preset_id = preset['objectId']
-            update_object(token, objectId=csa_preset_id, name=f'CSA: {site_name}')
-            update_object(token, objectId=srm_preset_id, name=f'SRM: {site_name}')
+            update_object(token, objectId=csa_preset_id,
+                          name=f'CSA: {site_name}')
+            update_object(token, objectId=srm_preset_id,
+                          name=f'SRM: {site_name}')
             print('...getting risks linked to SRM preset')
             risks = get_related_objects(
                 token=token,
@@ -90,11 +95,17 @@ class Command(BaseCommand):
             country_risks = get_country_risks(token, country_id)
             print('...linking SRM risks to Country risks')
             for risk in risks:
-                update_object(token, objectId=risk['objectId'], description=site_name)
-                relate_objects(token, objectId=risk['objectId'], relatedObjectId=country_risks[risk['objectName']], relationshipTypeId=18879)
+                update_object(
+                    token, objectId=risk['objectId'], description=site_name)
+                relate_objects(
+                    token,
+                    objectId=risk['objectId'],
+                    relatedObjectId=country_risks[risk['objectName']],
+                    relationshipTypeId=18879
+                )
             print('...triggering CSA applicability')
-            trigger_workflow(token, objectId=csa_preset_id, triggerId=trigger_id_for_csa)
+            trigger_workflow(token, objectId=csa_preset_id,
+                             triggerId=trigger_id_for_csa)
             print('...archiving request')
             trigger_workflow(token, objectId=request['id'], triggerId=22578)
             print('End of script')
-            
