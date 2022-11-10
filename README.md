@@ -8,7 +8,7 @@
 - Установите зависимости командой  
 ```pip install -r requirements.txt```
 - Запустите скрипт командой  
-```python3 main.py```
+```python3 manage.py create```
 
 ## Переменные окружения
 
@@ -16,9 +16,11 @@
 
 * `EMAIL` - Логин для Resolver.
 * `PASSWORD` - Пароль для Resolver.
+* `GOOGLE_API` - Ключ API для Google Maps.
 
 Например:  
 ```
 EMAIL=john.smith@domain.com
 PASSWORD=V3r9Str0ngP4ssw0rd
+GOOGLE_API=123google456api789key
 ```

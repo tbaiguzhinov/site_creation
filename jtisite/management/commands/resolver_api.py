@@ -5,6 +5,10 @@ import requests
 from jtisite.management.commands.location_api import get_country_and_city
 
 
+class MissingFieldError(Exception):
+    pass
+
+
 def authenticate(login, password):
     data = {
         'email': login,
@@ -51,13 +55,13 @@ def search_objects(token, objectTypeId, lifeCycleId=None):
 
 
 def create_new_site(token, request):
-    required_fields = {
-        '37052': 'category',
+    site_fields = {
+        '37052': 'Site category',
         '37055': 'jti_staff',
-        '37083': 'operated_by',
+        '37083': 'Operated by',
         '37085': 'fg',
         '37090': 'ia_sta',
-        '37093': 'type',
+        '37093': 'Site type',
         '37095': 'photo',
         '37103': 'contractors',
         '40607': 'field_force',
@@ -69,34 +73,40 @@ def create_new_site(token, request):
         '40613': 'other',
         '40615': 'key_site',
         '51551': 'start_date',
-        '51620': 'legal_address',
+        '51620': 'legal address',
     }
+    required_fields = ['37052', '37083', '37093', '51620'] 
     evaluations = []
     for fieldId, value_field in request['evaluations'].items():
         value = value_field['value']
         if fieldId == '51551' and not value:
             value = time.time()
-        if fieldId in required_fields and value:
+        if fieldId in site_fields and value:
             evaluations.append({
                 'fieldId': fieldId,
                 'value': value,
             })
+        if fieldId in required_fields and not value:
+            field_name = site_fields[fieldId]
+            raise MissingFieldError(f'{field_name} is missing')
     files = get_file(token, request_id=request['id'])
     photo = files['51565'][0] if '51565' in files else None
     cs_responsibles = None
-    roles = get_cs_responsible(token, request_id=request['id'])['roleEvaluations']
+    roles = get_cs_responsible(token, request_id=request['id'])[
+        'roleEvaluations']
     for role in roles:
         if role['roleId'] == '4359' and role['users']:
             cs_responsibles = role['users']
     geolocation = request['geolocation']
     geolocation.pop('id')
     geolocation.pop('created')
-    
+
     city_obj, site_type, site_category, icon = get_site_type_category_city(
         site_type_id=request['evaluations']['37093']['value'],
         site_category_id=request['evaluations']['37052']['value'],
         geolocation=geolocation,
     )
+    trigger_id_for_csa = get_trigeer_id_for_csa(site_category, site_type)
     name = create_site_name(
         icon,
         city_obj.name,
@@ -106,7 +116,8 @@ def create_new_site(token, request):
         comments=None,
     )
     blank_ref_id = create_ref_id(city_obj.name, site_type, site_category)
-    externalRefId = check_for_ref_id(token, blank_ref_id, city_obj.country.simp_id)
+    externalRefId = check_for_ref_id(
+        token, blank_ref_id, city_obj.country.simp_id)
     description = get_description(
         operated_by=request['evaluations']['37083']['value'],
         site_type=site_type,
@@ -153,21 +164,46 @@ def create_new_site(token, request):
         json=data,
     )
     response.raise_for_status()
-    return response.json()['id'], name, description
+    return response.json()['id'], name, description, country_id, trigger_id_for_csa
 
 
-def update_site(site_id, name, description, token):
-    data = {
-        'name': name,
-        'description': description,
+def get_trigeer_id_for_csa(site_category, site_type):
+    triggers = {
+        "WH B": 44622,
+        "WH A": 44620,
+        "Office C": 44618,
+        "Office B": 44616,
+        "Office A": 44614,
+        "Leaf WH": 44612,
+        "Leaf Factory": 44610,
+        "FG Factory": 44608,
+        "CDWH": 44606,
+        "WH C": 43463,
     }
-    response = requests.put(
-        f'https://eu.core.resolver.com/data/object/{site_id}',
-        headers={'Authorization': f'Bearer {token}'},
-        json=data,
-    )
-    response.raise_for_status()
-    return response.json()
+    if site_type == 'Sales Depot':
+        return triggers['WH C']
+    elif site_type == 'Factory':
+        return triggers['FG Factory']
+    elif site_type == 'Cross-Docking WH':
+        return triggers['CDWH']
+    elif site_type == 'Leaf WH':
+        return triggers['Leaf WH']
+    elif site_type == 'Leaf Factory':
+        return triggers['Leaf Factory']
+    if site_category == 'A':
+        if site_type == 'FG WH':
+            return triggers['WH A']
+        elif site_type == 'Office':
+            return triggers['Office A']
+    elif site_category == 'B':
+        if site_type == 'Office':
+            return triggers['Office B']
+        else:
+            return triggers['WH B']
+    else:
+        if site_type == 'C':
+            return triggers['Office C']
+        return triggers['WH C']
 
 
 def get_site_type_category_city(site_type_id, site_category_id, geolocation):
@@ -219,10 +255,10 @@ def check_for_ref_id(token, blank_ref_id, country_simp_id):
     x = 1
     suggested_refId = '{} {:02d}'.format(blank_ref_id, x)
     while suggested_refId in all_externalrefids:
-        x += 1 
+        x += 1
         suggested_refId = '{} {:02d}'.format(blank_ref_id, x)
-    return suggested_refId        
-    
+    return suggested_refId
+
 
 def get_description(operated_by, site_type, site_category, address, coordinates):
     operated_options = {
@@ -265,8 +301,8 @@ def create_assessment(token, name, jti_site_id):
         ],
         'evaluations': [
             {
-                'fieldId': 51533, #Assessment Type
-                'value': 149233   #Site
+                'fieldId': 51533,  # Assessment Type
+                'value': 149233  # Site
             }
         ],
         'assessment': 'true',
@@ -274,7 +310,7 @@ def create_assessment(token, name, jti_site_id):
             {
                 'type': 1,
                 'optionId': jti_site_id,
-                'dimensionId': 8100, # Site
+                'dimensionId': 8100,  # Site
             }
         ],
         'triggerId': 38480,
@@ -306,12 +342,10 @@ def add_assesment_focus(token, assessment_id, objectId):
     return response.json()
 
 
-def confirm_scope(token, assessment_id):
+def launch_assessment(token, assessment_id):
     response = requests.post(
         f'https://eu.core.resolver.com/creation/assessment/{assessment_id}/launch',
-        params = {
-            'useJob': 'true'
-        },
+        params={'useJob': 'true'},
         headers={'Authorization': f'Bearer {token}'},
     )
     response.raise_for_status()
@@ -331,3 +365,76 @@ def poll_for_status(token, jobId):
         status = response.json()['status']
         time.sleep(15)
     return 'Success'
+
+
+def trigger_workflow(token, objectId, triggerId):
+    response = requests.post(
+        f'https://eu.core.resolver.com/data/object/{objectId}/trigger/{triggerId}/go',
+        headers={'Authorization': f'Bearer {token}'},
+        params={'tz': 'Asia/Almaty'},
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def get_related_objects(token, objectId, relationshipTypeId):
+    response = requests.get(
+        f'https://eu.core.resolver.com/data/object/{objectId}/relationships/{relationshipTypeId}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    response.raise_for_status()
+    return response.json()
+    
+
+def update_object(token, objectId, name=None, description=None):
+    data = {}
+    if name:
+        data['name'] = name
+    if description:
+        data['description'] = description
+    response = requests.put(
+        f'https://eu.core.resolver.com/data/object/{objectId}',
+        headers={'Authorization': f'Bearer {token}'},
+        json=data,
+    )
+    response.raise_for_status()
+
+
+def relate_objects(token, objectId, relatedObjectId, relationshipTypeId=18879, params=None):
+    response = requests.post(
+        f'https://eu.core.resolver.com/creation/creation/{objectId}/relationship/{relationshipTypeId}/relatedObject/{relatedObjectId}',
+        headers={'Authorization': f'Bearer {token}'},
+        params=params,
+    )
+    status_code = response.status_code
+    if status_code >= 300:
+        print(f'...loaded with status code {status_code}, sleeping 15 seconds')
+        time.sleep(15)
+
+
+def get_country_risks(token, country_id):
+    risks = {}
+    country_assessment_id = get_related_objects(
+        token=token,
+        objectId=country_id,
+        relationshipTypeId=18883,
+    )[0]['objectId']
+    country_presets = get_related_objects(
+        token=token,
+        objectId=country_assessment_id,
+        relationshipTypeId=18885,
+    )
+    srm_preset_id = 0
+    for preset in country_presets:
+        if 'SRM' in preset['objectName']:
+            srm_preset_id = preset['objectId']
+    if not srm_preset_id:
+        raise
+    country_risks = get_related_objects(
+        token=token,
+        objectId=srm_preset_id,
+        relationshipTypeId=18899
+    )
+    for risk in country_risks:
+        risks[risk['objectName']] = risk['objectId']
+    return risks
