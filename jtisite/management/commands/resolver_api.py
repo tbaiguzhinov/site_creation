@@ -1,5 +1,8 @@
+import time
+
 import requests
-from xlsxwriter import Workbook
+
+from jtisite.management.commands.location_api import get_country_and_city
 
 
 def authenticate(login, password):
@@ -54,7 +57,6 @@ def create_new_site(token, request):
         '37083': 'operated_by',
         '37085': 'fg',
         '37090': 'ia_sta',
-        '37091': 'attachments',
         '37093': 'type',
         '37095': 'photo',
         '37103': 'contractors',
@@ -67,170 +69,265 @@ def create_new_site(token, request):
         '40613': 'other',
         '40615': 'key_site',
         '51551': 'start_date',
-        '51565': 'image2',
         '51620': 'legal_address',
     }
     evaluations = []
-    for evaluation, value in request['evaluations'].items():
-        if evaluation in required_fields:
+    for fieldId, value_field in request['evaluations'].items():
+        value = value_field['value']
+        if fieldId == '51551' and not value:
+            value = time.time()
+        if fieldId in required_fields and value:
             evaluations.append({
-                'fieldId': evaluation,
-                'value': value['value'],
+                'fieldId': fieldId,
+                'value': value,
             })
-    name = create_site_name(
-        site_type=request['evaluations']['37093']['value'],
-        site_category=request['evaluations']['37052']['value'],
-        location='',
+    files = get_file(token, request_id=request['id'])
+    photo = files['51565'][0] if '51565' in files else None
+    cs_responsibles = None
+    roles = get_cs_responsible(token, request_id=request['id'])['roleEvaluations']
+    for role in roles:
+        if role['roleId'] == '4359' and role['users']:
+            cs_responsibles = role['users']
+    geolocation = request['geolocation']
+    geolocation.pop('id')
+    geolocation.pop('created')
+    
+    city_obj, site_type, site_category, icon = get_site_type_category_city(
+        site_type_id=request['evaluations']['37093']['value'],
+        site_category_id=request['evaluations']['37052']['value'],
+        geolocation=geolocation,
     )
-    print(name)
-    raise
-    # Identify external ref id
-    # Add logo to Name concat
-    # Add comments (if Available) to Name concat
-    # When adding geolocation, add description from Legal address
-
+    name = create_site_name(
+        icon,
+        city_obj.name,
+        city_obj.country.name,
+        site_type,
+        site_category,
+        comments=None,
+    )
+    blank_ref_id = create_ref_id(city_obj.name, site_type, site_category)
+    externalRefId = check_for_ref_id(token, blank_ref_id, city_obj.country.simp_id)
+    description = get_description(
+        operated_by=request['evaluations']['37083']['value'],
+        site_type=site_type,
+        site_category=site_category,
+        address=request['evaluations']['51620']['value'],
+        coordinates=geolocation['geo']['coordinates'],
+    )
+    country_id = city_obj.country.simp_id
+    region_id = city_obj.country.region.simp_id
     data = {
-        "name": name,
-        "externalRefId": "{ICON}{City}({SiteType} {SiteCategory}) 01 > 02 > 03",
-        "description": "{Operated by} operated {SiteType} {SiteCategory} at: {Street&House}, {Postal/ZIP Code}, {City}, {Country} (GPS: {GPS coordinates})",
-        "evaluations": evaluations,
-        "geolocation": {
-            "geo": {
-                "type": "point",
-                "coordinates": [
-                    0,
-                    0
-                ]
+        'name': name,
+        'externalRefId': externalRefId,
+        'description': description,
+        'evaluations': evaluations,
+        'geolocation': geolocation,
+        'objectTypeId': 8100,
+        'references': [
+            {
+                'relationshipId': '13345',
+                'value': [country_id]
             },
-            "country": "US",
-            "countryName": "United States",
-            "state": "string",
-            "stateName": "string",
-            "city": "string",
-            "zipCode": "string",
-            "street": "string",
-            "houseNumber": "string",
-            "notes": "string",
-            "label": "string"
-        },
-        "geolocationTranslations": [
             {
-                "language": "string",
-                "country": "string",
-                "state": "string",
-                "city": "string",
-                "zipCode": "string",
-                "street": "string",
-                "houseNumber": "string",
-                "label": "string"
-            }
+                'relationshipId': '14575',
+                'value': [region_id]
+            },
         ],
-        "objectTypeId": "string",
-        "anchor": "string",
-        "relationships": [
-            {
-                "relationshipId": "string",
-                "value": [
-                    "string"
-                ]
-            }
-        ],
-        "references": [
-            {
-                "relationshipId": "string",
-                "value": [
-                    "string"
-                ]
-            }
-        ],
-        "roles": [
-            {
-                "roleId": "string",
-                "users": [
-                    "string"
-                ],
-                "userGroups": [
-                    "string"
-                ]
-            }
-        ],
-        "files": [
-            {
-                "fileId": 0,
-                "fieldId": 0
-            }
-        ],
-        "triggerId": "string",
-        "assessment": false,
-        "dimensions": [
-            {
-                "type": 1,
-                "dimensionId": 0,
-                "optionId": 0
-            }
-        ],
-        "hasSubmitterOptedIn": false,
-        "isSubmitterAnonymous": true,
-        "submitter": "string",
-        "submitterName": "string",
-        "parent": {
-            "objectId": 0,
-            "relationshipTypeId": 0,
-            "inverse": false
-        },
-        "tz": "UTC"
+        'triggerId': '22562',
     }
-
+    if photo:
+        data['files'] = [
+            {
+                'fileId': photo['id'],
+                'fieldId': 51565,
+            }
+        ]
+    if cs_responsibles:
+        data['roles'] = [{
+            'roleId': '4359',
+            'users': cs_responsibles,
+        }]
     response = requests.post(
         'https://eu.core.resolver.com/creation/creation',
         headers={'Authorization': f'Bearer {token}'},
         json=data,
     )
     response.raise_for_status()
-    return response.json('id')
+    return response.json()['id'], name, description
 
 
-def create_site_name(site_type, site_category, location):
-    icon = ''
-    city = ''
-    country = ''
-    site_type = ''
-    site_category = ''
-    return f'{icon}{city}, {country}: {site_type} {site_category}'
+def update_site(site_id, name, description, token):
+    data = {
+        'name': name,
+        'description': description,
+    }
+    response = requests.put(
+        f'https://eu.core.resolver.com/data/object/{site_id}',
+        headers={'Authorization': f'Bearer {token}'},
+        json=data,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
-def get_all_sites(token):
-    objectTypeId = 8100
-    all_objects = []
-    page = 1
-    objects = [1]
-    while objects:
-        print('Getting page', page)
-        objects_url = "https://eu.core.resolver.com/data/object?objectTypeId={}&pageNumber={}".format(
-            objectTypeId, page)
-        header = {"Authorization": f"bearer {token}"}
-        objects = requests.get(objects_url, headers=header).json()['data']
-        for object_ in objects:
-            all_objects.append(object_)
-        page += 1
+def get_site_type_category_city(site_type_id, site_category_id, geolocation):
+    icons_and_types = {
+        97700: (chr(127981), 'Factory'),
+        98188: (chr(127981)+chr(127810), 'Leaf Factory'),
+        98770: (chr(127968), 'Office'),
+        98279: (chr(128230)+chr(128684), 'FG WH'),
+        97761: (chr(128230)+chr(127810), 'Leaf WH'),
+        115449: (chr(128230), 'Sales Depot'),
+        98779: (chr(128230), 'Cross-Docking WH'),
+        97832: (chr(128230), 'M&S WH'),
+        98537: (chr(128230), 'NTM WH'),
+    }
+    categories = {
+        98482: 'A',
+        98436: 'B',
+        97861: 'C',
+    }
+    icon, site_type = icons_and_types[site_type_id]
+    city_obj = get_country_and_city(geolocation)
+    site_category = categories[site_category_id]
+    return city_obj, site_type, site_category, icon
 
-    wb = Workbook('sites.xlsx')
-    sheet1 = wb.add_worksheet('Sheet1')
-    sheet1.write(0, 1, 'Site name')
-    sheet1.write(0, 2, 'Site description')
-    sheet1.write(0, 3, 'Legal address')
-    sheet1.write(0, 4, 'Coordinates')
-    sheet1.write(0, 5, 'Address label')
 
-    row = 1
-    for object in all_objects:
-        sheet1.write(row, 1, object['name'])
-        sheet1.write(row, 2, object['description'])
-        sheet1.write(row, 3, object['evaluations']['51620']
-                     ['value'] if '51620' in object['evaluations'] else '')
-        sheet1.write(row, 4, str(
-            object['geolocation']['geo']['coordinates']) if 'geolocation' in object else '')
-        sheet1.write(row, 5, object['geolocation']
-                     ['label'] if 'geolocation' in object else '')
-        row += 1
-    wb.close()
+def create_site_name(icon, city, country, site_type, site_category, comments):
+    name = f'{icon}{city}, {country}: {site_type} cat. {site_category}'
+    if comments:
+        name += f' ({comments})'
+    return name
+
+
+def create_ref_id(city, site_type, site_category):
+    return f'{city} ({site_type} {site_category})'
+
+
+def get_sites_from_country(token, objectId, relationshipTypeId=13345):
+    response = requests.get(
+        f'https://eu.core.resolver.com/data/object/{objectId}/relationships/{relationshipTypeId}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def check_for_ref_id(token, blank_ref_id, country_simp_id):
+    all_sites = get_sites_from_country(token, country_simp_id)
+    all_externalrefids = [site['externalRefId'] for site in all_sites]
+    x = 1
+    suggested_refId = '{} {:02d}'.format(blank_ref_id, x)
+    while suggested_refId in all_externalrefids:
+        x += 1 
+        suggested_refId = '{} {:02d}'.format(blank_ref_id, x)
+    return suggested_refId        
+    
+
+def get_description(operated_by, site_type, site_category, address, coordinates):
+    operated_options = {
+        98799: 'JTI',
+        98204: '3PL',
+        186736: 'Other (Specify)',
+    }
+    operated_by = operated_options[operated_by]
+    lat, lon = coordinates
+    return f'{operated_by} operated {site_type} {site_category} at: {address} (GPS: {lat}, {lon})'
+
+
+def get_cs_responsible(token, request_id):
+    response = requests.get(
+        f'https://eu.core.resolver.com/data/object/{request_id}/roleMembership',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def get_file(token, request_id):
+    response = requests.get(
+        f'https://eu.core.resolver.com/data/object/{request_id}/file',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def create_assessment(token, name, jti_site_id):
+    data = {
+        'name': name,
+        'objectTypeId': 11307,
+        'relationships': [
+            {
+                'relationshipId': 18898,
+                'value': [jti_site_id]
+            }
+        ],
+        'evaluations': [
+            {
+                'fieldId': 51533, #Assessment Type
+                'value': 149233   #Site
+            }
+        ],
+        'assessment': 'true',
+        'dimensions': [
+            {
+                'type': 1,
+                'optionId': jti_site_id,
+                'dimensionId': 8100, # Site
+            }
+        ],
+        'triggerId': 38480,
+        'parent': {
+            'inverse': 'true',
+            'objectId': jti_site_id,
+            'relationshipTypeId': 18898
+        }
+    }
+    response = requests.post(
+        'https://eu.core.resolver.com/creation/creation',
+        headers={'Authorization': f'Bearer {token}'},
+        json=data,
+    )
+    response.raise_for_status()
+    return response.json()['id']
+
+
+def add_assesment_focus(token, assessment_id, objectId):
+    data = {
+        'objectId': objectId,
+    }
+    response = requests.post(
+        f'https://eu.core.resolver.com/creation/assessment/{assessment_id}/focus',
+        headers={'Authorization': f'Bearer {token}'},
+        json=data,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def confirm_scope(token, assessment_id):
+    response = requests.post(
+        f'https://eu.core.resolver.com/creation/assessment/{assessment_id}/launch',
+        params = {
+            'useJob': 'true'
+        },
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    response.raise_for_status()
+    return response.json()['id']
+
+
+def poll_for_status(token, jobId):
+    status = 1
+    while status == 1:
+        response = requests.get(
+            f'https://eu.core.resolver.com/object/job/{jobId}',
+            headers={
+                'Authorization': f'Bearer {token}',
+            },
+        )
+        response.raise_for_status()
+        status = response.json()['status']
+        time.sleep(15)
+    return 'Success'
