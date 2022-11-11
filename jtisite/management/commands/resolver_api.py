@@ -76,6 +76,8 @@ def create_new_site(token, request):
         '51620': 'legal address',
     }
     required_fields = ['37052', '37083', '37093', '51620']
+    staff_fields = ['37055', '37090', '37103', '40607', '40608']
+    finance_fields = ['37085', '40609', '40610', '40611', '40612', '40613']
     evaluations = []
     for fieldId, value_field in request['evaluations'].items():
         value = value_field['value']
@@ -85,6 +87,11 @@ def create_new_site(token, request):
             evaluations.append({
                 'fieldId': fieldId,
                 'value': value,
+            })
+        if (fieldId in staff_fields or fieldId in finance_fields) and not value:
+            evaluations.append({
+                'fieldId': fieldId,
+                'value': '0',
             })
         if fieldId in required_fields and not value:
             field_name = site_fields[fieldId]
@@ -143,6 +150,10 @@ def create_new_site(token, request):
                 'relationshipId': '14575',
                 'value': [region_id]
             },
+            {
+                'relationshipId': '28461', # Linking to AdminConnect
+                'value': [1384357]
+            },
         ],
         'triggerId': '22562',
     }
@@ -164,7 +175,7 @@ def create_new_site(token, request):
         json=data,
     )
     response.raise_for_status()
-    return response.json()['id'], name, description, country_id, trigger_id_for_csa
+    return response.json()['id'], name, description, country_id, region_id, trigger_id_for_csa
 
 
 def get_trigeer_id_for_csa(site_category, site_type):
@@ -303,6 +314,10 @@ def create_assessment(token, name, jti_site_id):
             {
                 'relationshipId': 18898,
                 'value': [jti_site_id]
+            },
+            {
+                'relationshipId': 18892,
+                'value': [304126]
             }
         ],
         'evaluations': [
