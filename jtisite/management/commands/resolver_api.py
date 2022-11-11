@@ -465,3 +465,16 @@ def get_country_risks(token, country_id):
     for risk in country_risks:
         risks[risk['objectName']] = risk['objectId']
     return risks
+
+
+def change_field(token, value, objectId, fieldId):
+    data = {
+        'value': value,
+    }
+    response = requests.post(
+        f'https://eu.core.resolver.com/data/object/{objectId}/evaluation/field/{fieldId}',
+        headers={'Authorization': f'Bearer {token}'},
+        json=data,
+    )
+    response.raise_for_status()
+    return response.json()

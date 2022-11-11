@@ -11,7 +11,8 @@ from jtisite.management.commands.resolver_api import (authenticate,
                                                       trigger_workflow,
                                                       get_related_objects,
                                                       relate_objects,
-                                                      get_country_risks
+                                                      get_country_risks,
+                                                      change_field,
                                                       )
 
 request_type_id = 8063
@@ -119,6 +120,14 @@ class Command(BaseCommand):
             print('...triggering CSA applicability')
             trigger_workflow(token, objectId=csa_preset_id,
                              triggerId=trigger_id_for_csa)
+            print('...adding completion summary')
+            completion_summary = f'This is to inform that a new **{site_name}** JTI Site record has been created in SIMP. Please see the link: [LINK](https://eu.core.resolver.com/#/form/default/object/{site_id}/edit)'
+            change_field(
+                token=token,
+                value=completion_summary,
+                objectId=request['id'],
+                fieldId=37048,
+            )
             print('...archiving request')
             trigger_workflow(token, objectId=request['id'], triggerId=22578)
             print('End of script')
