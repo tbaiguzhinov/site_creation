@@ -1,4 +1,5 @@
 import time
+import xlsxwriter
 
 import requests
 
@@ -22,6 +23,15 @@ def authenticate(login, password):
     )
     response.raise_for_status()
     return response.json()['token']
+
+
+def get_object(token, objectId):
+    response = requests.get(
+        f'https://eu.core.resolver.com/data/object/{objectId}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def get_objects(token, objectTypeId, page):
@@ -151,7 +161,7 @@ def create_new_site(token, request):
                 'value': [region_id]
             },
             {
-                'relationshipId': '28461', # Linking to AdminConnect
+                'relationshipId': '28461',  # Linking to AdminConnect
                 'value': [1384357]
             },
         ],
@@ -478,3 +488,77 @@ def change_field(token, value, objectId, fieldId):
     )
     response.raise_for_status()
     return response.json()
+
+
+def get_state_name(token, objectTypeId, stateId):
+    response = requests.get(
+        f'https://eu.core.resolver.com/object/objectType/{objectTypeId}/objectLifeCycle/state',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    response.raise_for_status()
+    payload = response.json()
+    for lifecycle, data in payload.items():
+        for state in data:
+            if state['id'] == stateId:
+                return state
+
+
+def get_field_option(token, fieldId, optionId):
+    response = requests.get(
+        f'https://eu.core.resolver.com/object/field/{fieldId}/option',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    response.raise_for_status()
+    for option in response.json():
+        if option['id'] == optionId:
+            return option
+
+
+def create_import_file(srm_externalRefId, risk_externalRefIds):
+    file_path = 'risks_import.xlsx'
+    wb = xlsxwriter.Workbook(file_path)
+    preset_sheet = wb.add_worksheet('Preset')
+    preset_sheet.write(0, 0, 'Object Type ID')
+    preset_sheet.write(1, 0, 'fef259fc-3825-4301-947a-d60504162d21')
+    preset_sheet.write(2, 1, 'Assessment Workflow')
+    preset_sheet.write(3, 0, 'External Ref ID')
+    preset_sheet.write(3, 1, 'Assessment - Preset Workflow')
+    preset_sheet.write(4, 0, srm_externalRefId)
+    preset_sheet.write(4, 1, 'Security Risk Assessment Complete')
+    risk_sheet = wb.add_worksheet('Security Risk')
+    risk_sheet.write(0, 0, 'Object Type ID')
+    risk_sheet.write(1, 0, 'Security Risk')
+    risk_sheet.write(2, 1, 'Assessment Workflow')
+    risk_sheet.write(3, 0, 'External Ref ID')
+    risk_sheet.write(3, 1, 'Assessment - Security Risk Workflow')
+    line = 4
+    for refId in risk_externalRefIds:
+        risk_sheet.write(line, 0, refId)
+        risk_sheet.write(line, 1, 'Complete')
+        line += 1
+    wb.close()
+    return file_path
+
+
+def create_site_import_file(sites):
+    file_path = 'site_import.xlsx'
+    wb = xlsxwriter.Workbook(file_path)
+    sheet = wb.add_worksheet('Preset')
+    sheet.write(0, 0, 'Object Type ID')
+    sheet.write(1, 0, 'Site')
+    sheet.write(2, 1, 'Library Workflow')
+    sheet.write(3, 0, 'External Ref ID')
+    sheet.write(3, 1, 'Name')
+    sheet.write(3, 2, 'JTI Site')
+    line = 4
+    for site in sites:
+        if site['objectName'].startswith(chr(10060)):
+            site_name = site['objectName']
+        else:
+            site_name = chr(10060)+site['objectName']
+        sheet.write(line, 0, site['externalRefId'])
+        sheet.write(line, 1, site_name)
+        sheet.write(line, 2, 'Active')
+        line += 1
+    wb.close()
+    return file_path
