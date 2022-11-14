@@ -135,7 +135,7 @@ class Command(BaseCommand):
                 )
                 site_name = site['objectName']
                 completion_summary.append(
-                    f'Site **{site_name}** has been archived along with its audits (if applicable)'
+                    f'This is to inform that the **{site_name}** record has been archived in SIMP.'
                 )
             print('...adding completion summary')
             change_field(
