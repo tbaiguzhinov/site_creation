@@ -106,6 +106,9 @@ def create_new_site(token, request):
         if fieldId in required_fields and not value:
             field_name = site_fields[fieldId]
             raise MissingFieldError(f'{field_name} is missing')
+    comment = request['evaluations']['61157']['value'] \
+        if '61157' in request['evaluations'] and \
+        request['evaluations']['61157']['value'].strip() else None
     files = get_file(token, request_id=request['id'])
     photo = files['51565'][0] if '51565' in files else None
     cs_responsibles = None
@@ -130,7 +133,7 @@ def create_new_site(token, request):
         city_obj.country.name,
         site_type,
         site_category,
-        comments=None,
+        comments=comment,
     )
     blank_ref_id = create_ref_id(city_obj.name, site_type, site_category)
     externalRefId = check_for_ref_id(
